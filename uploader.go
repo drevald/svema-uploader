@@ -2,8 +2,10 @@ package main
 
 import (
 	"net/http"
-	"time"
 	"fmt"
+	"io/ioutil"
+	"strings"
+	"encoding/json"
 )
 
 const (
@@ -15,36 +17,42 @@ type errorResponse struct {
 	Message string	//'json:"message"'
 }
 
-type Client struct {
-	BaseUrl string
-	HTTPClient *http.Client
-}
-
 type Album struct {
-	Album string	//'json:"albumId"'
+	AlbumId int		//'json:"albumId"'
 	Name string		//'json:"name"'
-	User string		//'json:"user"'
+	User int		//'json:"user"'
 	PreviewId int	//'json:"previewId"'
 }
 
-func NewClient(api string) *Client {
-	return &Client{
-		BaseUrl: BaseUrlDev,
-		HTTPClient: &http.Client{
-			Timeout: time.Minute,
-		},
-	}
+type Shot struct {
+	Id int			//'json:"albumId"'
+	Name string		//'json:"name"'
+	UserId int		//'json:"user"'
+	PreviewId int	//'json:"previewId"'
+	Data []byte
 }
 
-func (c *Client) GetAlbums() *http.Response {
-	var resp, err = c.HTTPClient.Get(fmt.Sprintf("%s/albums", c.BaseUrl))
+func GetAlbums() []Album {
+	resp, err := http.Get(BaseUrlDev + "/albums")
 	if err != nil {
-		fmt.Print(err)
+		panic(err)
 	}
-	return resp
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	albums := []Album{}
+	err = json.Unmarshal(body, &albums)
+	if (err != nil) {
+		fmt.Println(err)
+	}
+	return albums
+}
+
+func keepLines(s string, n int) string {
+	result := strings.Join(strings.Split(s, "\n")[:n], "\n")
+	return strings.Replace(result, "\r", "", -1)
 }
 
 func main() {
-	var client = NewClient(BaseUrlDev)
-	fmt.Print(client.GetAlbums().Body)
+	fmt.Println(GetAlbums())
 }
