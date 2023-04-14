@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"fmt"
 	"io/ioutil"
-	"strings"
 	"encoding/json"
+	"bytes"
 )
 
 const (
@@ -48,11 +48,22 @@ func GetAlbums() []Album {
 	return albums
 }
 
-func keepLines(s string, n int) string {
-	result := strings.Join(strings.Split(s, "\n")[:n], "\n")
-	return strings.Replace(result, "\r", "", -1)
+func PostAlbum(album Album) {
+	albumJson, _ := json.Marshal(album)
+	reader := bytes.NewReader(albumJson)
+	fmt.Print(albumJson)
+	_,_ = http.Post(BaseUrlDev + "/albums", "application/json", reader)
+
 }
 
+
 func main() {
-	fmt.Println(GetAlbums())
+	//fmt.Println(GetAlbums())
+	album := Album {
+		AlbumId : 1,
+		Name: "name",
+		User: 0,
+		PreviewId: 0,
+	}
+	PostAlbum(album)
 }
