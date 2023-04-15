@@ -6,6 +6,9 @@ import (
 	"io/ioutil"
 	"encoding/json"
 	"bytes"
+	"os"
+	"log"
+
 )
 
 const (
@@ -58,12 +61,24 @@ func PostAlbum(album Album) {
 
 
 func main() {
-	//fmt.Println(GetAlbums())
-	album := Album {
-		AlbumId : 1,
-		Name: "name",
-		User: 0,
-		PreviewId: 0,
-	}
-	PostAlbum(album)
+	// album := Album {
+	// 	AlbumId : 1,
+	// 	Name: "name",
+	// 	User: 0,
+	// 	PreviewId: 0,
+	// }
+	// PostAlbum(album)
+
+    // files, err := ioutil.ReadDir("E:\\FILMS")
+    // if err != nil {
+    //     log.Fatal(err)
+    // }
+
+    // for _, file := range files {
+    //     fmt.Println(file.Name(), file.IsDir())
+    // }
+
+	argsWithoutProg := os.Args
+	log.Fatal(argsWithoutProg[0])
+
 }
