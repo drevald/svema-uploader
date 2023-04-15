@@ -7,7 +7,8 @@ import (
 	"encoding/json"
 	"bytes"
 	"os"
-	"log"
+	"strings"
+	"strconv"
 
 )
 
@@ -23,15 +24,17 @@ type errorResponse struct {
 type Album struct {
 	AlbumId int		//'json:"albumId"'
 	Name string		//'json:"name"'
-	User int		//'json:"user"'
+	UserId int		//'json:"user"'
 	PreviewId int	//'json:"previewId"'
 }
 
 type Shot struct {
-	Id int			//'json:"albumId"'
+	ShotId int			
+	AlbumId int
 	Name string		//'json:"name"'
 	UserId int		//'json:"user"'
-	PreviewId int	//'json:"previewId"'
+	DateStart string
+	DateEnd string
 	Data []byte
 }
 
@@ -51,34 +54,93 @@ func GetAlbums() []Album {
 	return albums
 }
 
-func PostAlbum(album Album) {
+func PostAlbum(album Album) Album {
 	albumJson, _ := json.Marshal(album)
 	reader := bytes.NewReader(albumJson)
-	fmt.Print(albumJson)
-	_,_ = http.Post(BaseUrlDev + "/albums", "application/json", reader)
-
+	resp, err := http.Post(BaseUrlDev + "/albums", "application/json", reader)
+	if (err != nil) {
+		fmt.Println(err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)	
+	updated_album := Album{}
+	err = json.Unmarshal(body, &updated_album)	
+	return updated_album
 }
 
+func PostShot(shot Shot) Shot {
+	shotJson, _ := json.Marshal(shot)
+	reader := bytes.NewReader(shotJson)
+	resp, err := http.Post(BaseUrlDev + "/shots", "application/json", reader)
+	if (err != nil) {
+		fmt.Println(err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)	
+	updated_shot := Shot{}
+	err = json.Unmarshal(body, &updated_shot)	
+	return updated_shot
+}
 
 func main() {
-	// album := Album {
-	// 	AlbumId : 1,
-	// 	Name: "name",
-	// 	User: 0,
-	// 	PreviewId: 0,
-	// }
-	// PostAlbum(album)
 
-    // files, err := ioutil.ReadDir("E:\\FILMS")
-    // if err != nil {
-    //     log.Fatal(err)
-    // }
+	dirname := "E:\\FILMS"
+	dirs, err := ioutil.ReadDir(dirname)
+    if err != nil {
+        fmt.Print(err)
+    }
+	
+//    for _, dir := range dirs {
+	dir := dirs[0]
+		if (dir.IsDir()) {
+			album := Album {
+				Name: dir.Name(),
+				UserId: 0,
+				PreviewId: 0,
+			}
+			stored_album := PostAlbum(album)	
+			albumdirname := dirname + "\\" + dir.Name()
+			files, err := ioutil.ReadDir(albumdirname)
+			if err != nil {
+				fmt.Print(err)
+			}
 
-    // for _, file := range files {
-    //     fmt.Println(file.Name(), file.IsDir())
-    // }
+			dateStart := ""
+			dateEnd := ""
 
-	argsWithoutProg := os.Args
-	log.Fatal(argsWithoutProg[0])
+			parts := strings.Split(album.Name, "_")
+			if (len([]rune(parts[1])) == 4) {
+				if num, err := strconv.Atoi(parts[1]); err == nil {
+						dateStart = fmt.Sprintf("%d%s", num, "-01-01")
+						dateEnd = fmt.Sprintf("%d%s", num, "-12-31")
+					} else {
+					decade := parts[1][0:3]
+					fmt.Printf("\n%s\n", decade)
+					if num, err := strconv.Atoi(decade); err == nil {
+						dateStart = fmt.Sprintf("%d%s", num, "0-01-01")
+						dateEnd = fmt.Sprintf("%d%s", num, "9-12-31")						
+						fmt.Printf("%d\n", num)
+					}
+				}
+			}
+
+			for _, file := range files {
+				filename := albumdirname + "\\" + file.Name()
+				fmt.Printf("%s\n", filename)
+				bytes, _ := os.ReadFile(filename)
+				shot := Shot {
+					AlbumId: stored_album.AlbumId,
+					Name: file.Name(),
+					DateStart: dateStart,
+					DateEnd: dateEnd,
+					Data: bytes,
+				}
+				PostShot(shot)
+			}
+
+			fmt.Printf("%d\n", stored_album.AlbumId)
+
+		}
+//    }
 
 }
