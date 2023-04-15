@@ -9,7 +9,8 @@ import (
 	"os"
 	"strings"
 	"strconv"
-
+	"mime"
+	"path/filepath"
 )
 
 const (
@@ -36,6 +37,7 @@ type Shot struct {
 	DateStart string
 	DateEnd string
 	Data []byte
+	Mime string
 }
 
 func GetAlbums() []Album {
@@ -125,6 +127,7 @@ func main() {
 			}
 
 			for _, file := range files {
+				ext := filepath.Ext(file.Name())
 				filename := albumdirname + "\\" + file.Name()
 				fmt.Printf("%s\n", filename)
 				bytes, _ := os.ReadFile(filename)
@@ -134,6 +137,8 @@ func main() {
 					DateStart: dateStart,
 					DateEnd: dateEnd,
 					Data: bytes,
+					Mime: mime.TypeByExtension(ext),
+					UserId: 1,
 				}
 				PostShot(shot)
 			}
