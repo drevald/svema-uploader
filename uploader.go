@@ -17,10 +17,10 @@ const (
 	BaseUrlDev = "http://localhost:7777/api"
 )
 
-type errorResponse struct {
-	Code int		//'json:"code"'
-	Message string	//'json:"message"'
-}
+// type errorResponse struct {
+// 	Code int		//'json:"code"'
+// 	Message string	//'json:"message"'
+// }
 
 type Album struct {
 	AlbumId int		//'json:"albumId"'
@@ -92,8 +92,8 @@ func main() {
         fmt.Print(err)
     }
 	
-//    for _, dir := range dirs {
-	dir := dirs[0]
+    for _, dir := range dirs {
+	// dir := dirs[3]
 		if (dir.IsDir()) {
 			album := Album {
 				Name: dir.Name(),
@@ -107,11 +107,11 @@ func main() {
 				fmt.Print(err)
 			}
 
-			dateStart := ""
-			dateEnd := ""
+			dateStart := "1874-07-24"
+			dateEnd := "1874-07-24"
 
 			parts := strings.Split(album.Name, "_")
-			if (len([]rune(parts[1])) == 4) {
+			if (len(parts) > 1 && len([]rune(parts[1])) == 4) {
 				if num, err := strconv.Atoi(parts[1]); err == nil {
 						dateStart = fmt.Sprintf("%d%s", num, "-01-01")
 						dateEnd = fmt.Sprintf("%d%s", num, "-12-31")
@@ -146,6 +146,6 @@ func main() {
 			fmt.Printf("%d\n", stored_album.AlbumId)
 
 		}
-//    }
+    }
 
 }
