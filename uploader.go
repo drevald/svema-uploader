@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"encoding/json"
 	"bytes"
 	"os"
@@ -46,7 +46,7 @@ func GetAlbums() []Album {
 		panic(err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(body))
 	albums := []Album{}
 	err = json.Unmarshal(body, &albums)
@@ -64,9 +64,9 @@ func PostAlbum(album Album) Album {
 		fmt.Println(err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)	
+	body, _ := io.ReadAll(resp.Body)	
 	updated_album := Album{}
-	err = json.Unmarshal(body, &updated_album)	
+	json.Unmarshal(body, &updated_album)	
 	return updated_album
 }
 
@@ -78,16 +78,16 @@ func PostShot(shot Shot) Shot {
 		fmt.Println(err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)	
+	body, _ := io.ReadAll(resp.Body)	
 	updated_shot := Shot{}
-	err = json.Unmarshal(body, &updated_shot)	
+	json.Unmarshal(body, &updated_shot)	
 	return updated_shot
 }
 
 func main() {
 
 	dirname := "E:\\FILMS"
-	dirs, err := ioutil.ReadDir(dirname)
+	dirs, err := os.ReadDir(dirname)
     if err != nil {
         fmt.Print(err)
     }
@@ -102,7 +102,7 @@ func main() {
 			}
 			stored_album := PostAlbum(album)	
 			albumdirname := dirname + "\\" + dir.Name()
-			files, err := ioutil.ReadDir(albumdirname)
+			files, err := os.ReadDir(albumdirname)
 			if err != nil {
 				fmt.Print(err)
 			}
