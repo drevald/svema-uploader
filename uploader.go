@@ -15,6 +15,8 @@ import (
 
 const (
 	BaseUrlDev = "http://localhost:7777/api"
+	//BaseUrlDev = "http://svema.valdr.ru/api"
+	//BaseUrlDev = "http://192.168.0.148:7777/api"
 )
 
 // type errorResponse struct {
@@ -70,18 +72,23 @@ func PostAlbum(album Album) Album {
 	return updated_album
 }
 
-func PostShot(shot Shot) Shot {
+func PostShot(shot Shot) {
 	shotJson, _ := json.Marshal(shot)
 	reader := bytes.NewReader(shotJson)
-	resp, err := http.Post(BaseUrlDev + "/shots", "application/json", reader)
+	_, err := http.Post(BaseUrlDev + "/shots", "application/json", reader)
 	if (err != nil) {
 		fmt.Println(err)
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)	
-	updated_shot := Shot{}
-	json.Unmarshal(body, &updated_shot)	
-	return updated_shot
+
+	// resp, err := http.Post(BaseUrlDev + "/shots", "application/json", reader)
+	// if (err != nil) {
+	// 	fmt.Println(err)
+	// }
+	// defer resp.Body.Close()
+	// body, _ := io.ReadAll(resp.Body)	
+	// updated_shot := Shot{}
+	// json.Unmarshal(body, &updated_shot)	
+	// return updated_shot
 }
 
 func main() {
@@ -93,11 +100,11 @@ func main() {
     }
 	
     for _, dir := range dirs {
-	// dir := dirs[3]
+//	dir := dirs[3]
 		if (dir.IsDir()) {
 			album := Album {
 				Name: dir.Name(),
-				UserId: 0,
+				UserId: 1,
 				PreviewId: 0,
 			}
 			stored_album := PostAlbum(album)	
