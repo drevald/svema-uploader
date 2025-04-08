@@ -11,10 +11,14 @@ import (
 	"strconv"
 	"mime"
 	"path/filepath"
+    "github.com/rwcarlsen/goexif/exif"
+    "github.com/rwcarlsen/goexif/mknote"	
+	"time"
 )
 
 const (
-	BaseUrlDev = "http://localhost:7777/api"
+	//BaseUrlDev = "http://dobby:7777/api"
+	BaseUrlDev = "http://localhost:8888/api"
 	//BaseUrlDev = "http://svema.valdr.ru/api"
 	//BaseUrlDev = "http://192.168.0.148:7777/api"
 )
@@ -72,6 +76,40 @@ func PostAlbum(album Album) Album {
 	return updated_album
 }
 
+func getDateTimeOriginal(imageBytes []byte) (*time.Time, error) {
+	// Register manufacturer-specific notes
+	exif.RegisterParsers(mknote.All...)
+
+	// Decode EXIF from bytes
+	x, err := exif.Decode(bytes.NewReader(imageBytes))
+	if err != nil {
+		return nil, fmt.Errorf("could not decode exif: %w", err)
+	}
+
+	// Get the DateTimeOriginal tag specifically
+	tag, err := x.Get(exif.DateTimeOriginal)
+	if err != nil {
+		return nil, fmt.Errorf("DateTimeOriginal not found: %w", err)
+	}
+
+	rawStr, err := tag.StringVal()
+	if err != nil {
+		return nil, fmt.Errorf("could not get string value: %w", err)
+	}
+
+	// DEBUG
+	fmt.Printf("🔍 Raw DateTimeOriginal string: %q\n", rawStr)
+
+	// Parse EXIF format date
+	tm, err := time.Parse("2006:01:02 15:04:05", rawStr)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse datetime: %w", err)
+	}
+
+	return &tm, nil
+}
+
+
 func PostShot(shot Shot) {
 	shotJson, _ := json.Marshal(shot)
 	reader := bytes.NewReader(shotJson)
@@ -79,34 +117,26 @@ func PostShot(shot Shot) {
 	if (err != nil) {
 		fmt.Println(err)
 	}
-
-	// resp, err := http.Post(BaseUrlDev + "/shots", "application/json", reader)
-	// if (err != nil) {
-	// 	fmt.Println(err)
-	// }
-	// defer resp.Body.Close()
-	// body, _ := io.ReadAll(resp.Body)	
-	// updated_shot := Shot{}
-	// json.Unmarshal(body, &updated_shot)	
-	// return updated_shot
 }
 
 func main() {
+	
+	dirname := os.Args[1]
 
-	dirname := "E:\\FILMS"
 	dirs, err := os.ReadDir(dirname)
     if err != nil {
         fmt.Print(err)
     }
-	
+
     for _, dir := range dirs {
-//	dir := dirs[3]
+
 		if (dir.IsDir()) {
 			album := Album {
 				Name: dir.Name(),
 				UserId: 1,
 				PreviewId: 0,
 			}
+
 			stored_album := PostAlbum(album)	
 			albumdirname := dirname + "\\" + dir.Name()
 			files, err := os.ReadDir(albumdirname)
@@ -118,6 +148,7 @@ func main() {
 			dateEnd := "1874-07-24"
 
 			parts := strings.Split(album.Name, "_")
+			 
 			if (len(parts) > 1 && len([]rune(parts[1])) == 4) {
 				if num, err := strconv.Atoi(parts[1]); err == nil {
 						dateStart = fmt.Sprintf("%d%s", num, "-01-01")
