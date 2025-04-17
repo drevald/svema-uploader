@@ -19,8 +19,8 @@ import (
 
 const (
 	// BaseUrlDev = "http://dobby:7777/api"
-	BaseUrlDev = "http://localhost:7777/api"
-	// BaseUrlDev = "http://svema.valdr.ru/api"
+	// BaseUrlDev = "http://localhost:7777/api"
+	BaseUrlDev = "http://svema.valdr.ru/api"
 	// BaseUrlDev = "http://192.168.0.148:7777/api"
 )
 
@@ -78,7 +78,6 @@ func PostAlbum(album Album) Album {
 	json.Unmarshal(body, &updated_album)	
 	return updated_album
 }
-
 
 func getExifDate(imageBytes []byte) (*time.Time, error) {
 	// Register manufacturer-specific notes
@@ -237,14 +236,14 @@ func main() {
 		parts := strings.Split(albumName, "_")
 		if len(parts) > 1 && len(parts[1]) == 4 {
 			if num, err := strconv.Atoi(parts[1]); err == nil {
-				dateStart = fmt.Sprintf("%d-01-01T00:00:00 +0000 UTC", num)
-				dateEnd = fmt.Sprintf("%d-12-31T00:00:00 +0000 UTC", num)
+				dateStart = fmt.Sprintf("%d-01-01T00:00:00Z", num)
+				dateEnd = fmt.Sprintf("%d-12-31T00:00:00Z", num)
 			}
 		} else if len(parts) > 1 && len(parts[1]) >= 3 {
 			decade := parts[1][:3]
 			if num, err := strconv.Atoi(decade); err == nil {
-				dateStart = fmt.Sprintf("%d0-01-01T00:00:00 +0000 UTC", num)
-				dateEnd = fmt.Sprintf("%d9-12-31T00:00:00 +0000 UTC", num)
+				dateStart = fmt.Sprintf("%d0-01-01T00:00:00Z", num)
+				dateEnd = fmt.Sprintf("%d9-12-31T00:00:00Z", num)
 			}
 		}
 
@@ -257,10 +256,11 @@ func main() {
 
 		for _, file := range files {
 
-			if file.IsDir() {
+			// Corrected code
+			if file.IsDir() || !strings.HasSuffix(strings.ToLower(file.Name()), "jpg") {
 				continue
 			}
-
+			
 			filename := filepath.Join(albumDir, file.Name())
 			fmt.Println("Processing:", filename)
 			data, err := os.ReadFile(filename)
