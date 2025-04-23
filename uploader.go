@@ -1,26 +1,26 @@
 package main
 
 import (
-	"net/http"
-	"fmt"
-	"io"
-	"encoding/json"
 	"bytes"
-	"os"
-	"strings"
-	"strconv"
+	"encoding/json"
+	"fmt"
+	"github.com/rwcarlsen/goexif/exif"
+	"github.com/rwcarlsen/goexif/mknote"
+	"io"
 	"mime"
+	"net/http"
+	"os"
 	"path/filepath"
-    "github.com/rwcarlsen/goexif/exif"
-    "github.com/rwcarlsen/goexif/mknote"	
-	"time"
+	"strconv"
+	"strings"
 	"syscall"
+	"time"
 )
 
 const (
 	// BaseUrlDev = "http://dobby:7777/api"
-	// BaseUrlDev = "http://localhost:7777/api"
-	BaseUrlDev = "http://svema.valdr.ru/api"
+	BaseUrlDev = "http://localhost:7777/api"
+	// BaseUrlDev = "http://svema.valdr.ru/api"
 	// BaseUrlDev = "http://192.168.0.148:7777/api"
 )
 
@@ -30,22 +30,22 @@ const (
 // }
 
 type Album struct {
-	AlbumId int		//'json:"albumId"'
-	Name string		//'json:"name"'
-	UserId int		//'json:"user"'
-	PreviewId int	//'json:"previewId"'
+	AlbumId   int    //'json:"albumId"'
+	Name      string //'json:"name"'
+	UserId    int    //'json:"user"'
+	PreviewId int    //'json:"previewId"'
 }
 
 type Shot struct {
-	ShotId int			
-	AlbumId int
-	Name string		//'json:"name"'
-	UserId int		//'json:"user"'
+	ShotId    int
+	AlbumId   int
+	Name      string //'json:"name"'
+	UserId    int    //'json:"user"'
 	DateStart string
-	DateEnd string
-	Data []byte
-	Mime string
-	OrigPath string
+	DateEnd   string
+	Data      []byte
+	Mime      string
+	OrigPath  string
 }
 
 func GetAlbums() []Album {
@@ -58,7 +58,7 @@ func GetAlbums() []Album {
 	fmt.Println(string(body))
 	albums := []Album{}
 	err = json.Unmarshal(body, &albums)
-	if (err != nil) {
+	if err != nil {
 		fmt.Println(err)
 	}
 	return albums
@@ -68,14 +68,14 @@ func PostAlbum(album Album) Album {
 	fmt.Printf("...Creating album %s\n", album.Name)
 	albumJson, _ := json.Marshal(album)
 	reader := bytes.NewReader(albumJson)
-	resp, err := http.Post(BaseUrlDev + "/albums", "application/json", reader)
-	if (err != nil) {
+	resp, err := http.Post(BaseUrlDev+"/albums", "application/json", reader)
+	if err != nil {
 		fmt.Println(err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)	
+	body, _ := io.ReadAll(resp.Body)
 	updated_album := Album{}
-	json.Unmarshal(body, &updated_album)	
+	json.Unmarshal(body, &updated_album)
 	return updated_album
 }
 
@@ -149,14 +149,14 @@ func getShotCreationDate(path string) (*time.Time, error) {
 	if err != nil {
 		fmt.Printf("Fail to read %s\n", path)
 		return nil, err
-	} 
+	}
 	t, err := getExifDate(data)
 	if err != nil {
 		fmt.Printf("Failed to get EXIF from %s\n", path)
 		t, err = getLastModifiedDate(path)
 		if err != nil {
 			return nil, err
-		} 
+		}
 		return t, nil
 	}
 	return t, nil
@@ -165,10 +165,28 @@ func getShotCreationDate(path string) (*time.Time, error) {
 func PostShot(shot Shot) {
 	shotJson, _ := json.Marshal(shot)
 	reader := bytes.NewReader(shotJson)
-	_, err := http.Post(BaseUrlDev + "/shots", "application/json", reader)
-	if (err != nil) {
-		fmt.Println(err)
+
+	resp, err := http.Post(BaseUrlDev+"/shots", "application/json", reader)
+	if err != nil {
+		fmt.Println("Request error:", err)
+		return
 	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		// Try to decode error JSON
+		var errResp map[string]interface{}
+		if json.Unmarshal(body, &errResp) == nil {
+			fmt.Println("Server error:", errResp)
+		} else {
+			fmt.Printf("HTTP %d: %s\n", resp.StatusCode, string(body))
+		}
+		return
+	}
+
+	fmt.Println("Shot uploaded successfully.")
 }
 
 ///////////////////////////////////////////////
@@ -177,13 +195,19 @@ func main() {
 
 	fmt.Print("Starting...")
 
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: uploader <directory> [--by-date]")
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: uploader <user_id> <directory> [--by-date]")
 		return
 	}
 
-	dirname := os.Args[1]
-	byDate := len(os.Args) > 2 && os.Args[2] == "--by-date"
+	userId, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		fmt.Println("Conversion error:", err)
+		return
+	}
+
+	dirname := os.Args[2]
+	byDate := len(os.Args) > 3 && os.Args[3] == "--by-date"
 
 	dirs, err := os.ReadDir(dirname)
 	if err != nil {
@@ -197,7 +221,7 @@ func main() {
 
 	for _, entry := range dirs {
 		fmt.Println(entry.Name()) // safer than fmt.Print(entry)
-	
+
 		if entry.IsDir() {
 			subdirPath := filepath.Join(dirname, entry.Name()) // full path to subdirectory
 			files, err := os.ReadDir(subdirPath)
@@ -205,7 +229,7 @@ func main() {
 				fmt.Println("Error reading subdir:", err)
 				continue
 			}
-	
+
 			for _, file := range files {
 				if !file.IsDir() {
 					filesTotal++
@@ -248,19 +272,22 @@ func main() {
 		}
 
 		// Pre-create album by default (in no --by-date mode)
-		defaultAlbum := Album{Name: albumName, UserId: 1, PreviewId: 0}
-		if (!byDate) {
+		defaultAlbum := Album{Name: albumName, UserId: userId, PreviewId: 0}
+		if !byDate {
 			defaultAlbum = PostAlbum(defaultAlbum)
 			albums[albumName] = defaultAlbum
-		}		
+		}
 
 		for _, file := range files {
 
 			// Corrected code
-			if file.IsDir() || !strings.HasSuffix(strings.ToLower(file.Name()), "jpg") {
+			if file.IsDir() ||
+				(!strings.HasSuffix(strings.ToLower(file.Name()), "jpg") &&
+					!strings.HasSuffix(strings.ToLower(file.Name()), "tiff") &&
+					!strings.HasSuffix(strings.ToLower(file.Name()), "tif")) {
 				continue
 			}
-			
+
 			filename := filepath.Join(albumDir, file.Name())
 			fmt.Println("Processing:", filename)
 			data, err := os.ReadFile(filename)
@@ -275,12 +302,12 @@ func main() {
 			if byDate {
 				fmt.Println("Upload by date")
 				if t, err := getShotCreationDate(filename); err == nil && t != nil {
-					dateStart = t.Format(time.RFC3339) 
-					dateEnd = t.Format(time.RFC3339) 
+					dateStart = t.Format(time.RFC3339)
+					dateEnd = t.Format(time.RFC3339)
 					dateKey := fmt.Sprintf("%d-%02d-%02d", t.Year(), t.Month(), t.Day())
 					storedAlbum, exists := albums[dateKey]
 					if !exists {
-						newAlbum := Album{Name: dateKey, UserId: 1, PreviewId: 0}
+						newAlbum := Album{Name: dateKey, UserId: userId, PreviewId: 0}
 						storedAlbum = PostAlbum(newAlbum)
 						albums[dateKey] = storedAlbum
 					}
@@ -295,19 +322,19 @@ func main() {
 			}
 
 			shot := Shot{
-				AlbumId:  targetAlbum.AlbumId,
-				Name:     file.Name(),
-				UserId:   1,
+				AlbumId:   targetAlbum.AlbumId,
+				Name:      file.Name(),
+				UserId:    userId,
 				DateStart: dateStart,
 				DateEnd:   dateEnd,
-				Data:     data,
-				Mime:     mime.TypeByExtension(ext),
-				OrigPath:	filename,
+				Data:      data,
+				Mime:      mime.TypeByExtension(ext),
+				OrigPath:  filename,
 			}
 
 			PostShot(shot)
 			filesSent++
-			fmt.Printf("%d of %d sent\n", filesSent, filesTotal);
+			fmt.Printf("%d of %d sent\n", filesSent, filesTotal)
 		}
 	}
 }
