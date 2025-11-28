@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/rwcarlsen/goexif/exif"
-	"github.com/rwcarlsen/goexif/mknote"
 	"io"
 	"mime"
 	"net/http"
@@ -13,12 +11,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"github.com/rwcarlsen/goexif/exif"
+	"github.com/rwcarlsen/goexif/mknote"
 )
 
-const BaseUrlDev = "http://valdr:7777/api"
-//const BaseUrlDev = "http://localhost:7777/api"
+//const BaseUrlDev = "http://svema.valdr.ru/api"
+
+const BaseUrlDev = "http://localhost:7777/api"
 
 type Album struct {
 	AlbumId   int
@@ -37,6 +40,46 @@ type Shot struct {
 	Data      []byte
 	Mime      string
 	OrigPath  string
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
+}
+
+type UploadControl struct {
+	mu        sync.Mutex
+	paused    bool
+	cancelled bool
+}
+
+func (c *UploadControl) IsPaused() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.paused
+}
+
+func (c *UploadControl) SetPaused(paused bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.paused = paused
+}
+
+func (c *UploadControl) IsCancelled() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cancelled
+}
+
+func (c *UploadControl) Cancel() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cancelled = true
+}
+
+type UploadResponse struct {
+	Message string  `json:"message"`
+	Lat     float64 `json:"lat"`
+	Lon     float64 `json:"lon"`
+	Date    string  `json:"date"`
+	Album   string  `json:"album"`
 }
 
 func GetAlbums() []Album {
@@ -100,6 +143,26 @@ func getExifDate(imageBytes []byte) (*time.Time, error) {
 	return &tm, nil
 }
 
+func getGPSCoordinates(imageBytes []byte) (lat, lon *float64) {
+	exif.RegisterParsers(mknote.All...)
+
+	x, err := exif.Decode(bytes.NewReader(imageBytes))
+	if err != nil {
+		return nil, nil
+	}
+
+	latVal, lonVal, err := x.LatLong()
+	if err != nil {
+		return nil, nil
+	}
+
+	// Round to 2 decimal places
+	latRounded := float64(int(latVal*100+0.5)) / 100
+	lonRounded := float64(int(lonVal*100+0.5)) / 100
+
+	return &latRounded, &lonRounded
+}
+
 func getLastModifiedDate(path string) (*time.Time, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -144,40 +207,57 @@ func getShotCreationDate(path string, ignoreExif bool) (*time.Time, error) {
 	return t, nil
 }
 
-func PostShot(shot Shot) {
+func PostShot(shot Shot) (*UploadResponse, error) {
 	shotJson, _ := json.Marshal(shot)
 	resp, err := http.Post(BaseUrlDev+"/shots", "application/json", bytes.NewReader(shotJson))
 	if err != nil {
 		fmt.Println("Request error:", err)
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		var errResp map[string]interface{}
 		if json.Unmarshal(body, &errResp) == nil {
 			fmt.Println("Server error:", errResp)
+			return nil, fmt.Errorf("server error: %v", errResp)
 		} else {
 			fmt.Printf("HTTP %d: %s\n", resp.StatusCode, string(body))
+			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 		}
-		return
+	}
+
+	// Parse the response
+	var uploadResp UploadResponse
+	if err := json.Unmarshal(body, &uploadResp); err != nil {
+		fmt.Println("Shot uploaded successfully (couldn't parse response).")
+		return nil, nil
 	}
 
 	fmt.Println("Shot uploaded successfully.")
+	return &uploadResp, nil
 }
 
-func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool) {
+type ProgressCallback func(current, total int, message string)
+
+func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool) error {
+	return UploadDirWithProgress(dirname, userId, byDate, ignoreExif, nil, nil)
+}
+
+func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif bool, progressCallback ProgressCallback, control *UploadControl) error {
 	dirs, err := os.ReadDir(dirname)
 	if err != nil {
 		fmt.Println("Error reading root directory:", err)
-		return
+		return err
 	}
 
 	albums := make(map[string]Album)
 	filesTotal := 0
+	failures := 0
 
+	// Count files in subdirectories
 	for _, entry := range dirs {
 		if entry.IsDir() {
 			subdir := filepath.Join(dirname, entry.Name())
@@ -188,14 +268,140 @@ func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool) {
 			}
 			for _, file := range files {
 				if !file.IsDir() {
-					filesTotal++
+					ext := strings.ToLower(filepath.Ext(file.Name()))
+					if ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif" {
+						filesTotal++
+					}
 				}
+			}
+		} else {
+			// Count files in root directory
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			if ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif" {
+				filesTotal++
 			}
 		}
 	}
 
+	if filesTotal == 0 {
+		return fmt.Errorf("no images found in directory (checked for .jpg, .jpeg, .tiff, .tif)")
+	}
+
 	filesSent := 0
 
+	// Process files in root directory first
+	rootFiles, err := os.ReadDir(dirname)
+	if err == nil {
+		// Create a default album for root files using the directory name
+		rootAlbumName := filepath.Base(dirname)
+		var rootAlbum Album
+		rootAlbumCreated := false
+
+		for _, file := range rootFiles {
+			if control != nil {
+				if control.IsCancelled() {
+					return fmt.Errorf("upload cancelled")
+				}
+				for control.IsPaused() {
+					if control.IsCancelled() {
+						return fmt.Errorf("upload cancelled")
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
+
+			if file.IsDir() {
+				continue
+			}
+
+			ext := strings.ToLower(filepath.Ext(file.Name()))
+			if !(ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif") {
+				continue
+			}
+
+			if !rootAlbumCreated {
+				// Initialize root album if we have files to upload
+				defaultAlbum := Album{Name: rootAlbumName, UserId: userId}
+				if !byDate {
+					defaultAlbum = PostAlbum(defaultAlbum)
+					albums[rootAlbumName] = defaultAlbum
+				}
+				rootAlbum = defaultAlbum
+				rootAlbumCreated = true
+			}
+
+			// Upload logic for root file
+			filename := filepath.Join(dirname, file.Name())
+			fmt.Println("Processing root file:", filename)
+
+			data, err := os.ReadFile(filename)
+			if err != nil {
+				fmt.Println("Error reading file:", err)
+				continue
+			}
+
+			var targetAlbum Album
+			dateStart := "1874-07-24"
+			dateEnd := "1874-07-24"
+
+			if byDate {
+				if t, err := getShotCreationDate(filename, ignoreExif); err == nil && t != nil {
+					dateStart = t.Format(time.RFC3339)
+					dateEnd = t.Format(time.RFC3339)
+					dateKey := fmt.Sprintf("%d-%02d-%02d", t.Year(), t.Month(), t.Day())
+					storedAlbum, exists := albums[dateKey]
+					if !exists {
+						newAlbum := Album{Name: dateKey, UserId: userId}
+						storedAlbum = PostAlbum(newAlbum)
+						albums[dateKey] = storedAlbum
+					}
+					targetAlbum = storedAlbum
+				} else {
+					targetAlbum = rootAlbum
+				}
+			} else {
+				targetAlbum = rootAlbum
+			}
+
+			// Extract GPS coordinates
+			lat, lon := getGPSCoordinates(data)
+
+			shot := Shot{
+				AlbumId:   targetAlbum.AlbumId,
+				Name:      file.Name(),
+				UserId:    userId,
+				DateStart: dateStart,
+				DateEnd:   dateEnd,
+				Data:      data,
+				Mime:      mime.TypeByExtension(ext),
+				OrigPath:  filename,
+				Latitude:  lat,
+				Longitude: lon,
+			}
+
+			uploadResp, err := PostShot(shot)
+			filesSent++
+			if progressCallback != nil {
+				var message string
+				if err != nil {
+					failures++
+					message = fmt.Sprintf("Failed|%s|Album: %s|Date: %s|Error: %v", file.Name(), targetAlbum.Name, dateStart, err)
+				} else if uploadResp != nil {
+					// Use response from server
+					gpsInfo := ""
+					if uploadResp.Lat != 0 || uploadResp.Lon != 0 {
+						gpsInfo = fmt.Sprintf("|GPS: %.2f, %.2f", uploadResp.Lat, uploadResp.Lon)
+					}
+					message = fmt.Sprintf("Uploaded|%s|Album: %s|Date: %s%s", file.Name(), uploadResp.Album, uploadResp.Date, gpsInfo)
+				} else {
+					message = fmt.Sprintf("Uploaded|%s|Album: %s|Date: %s", file.Name(), targetAlbum.Name, dateStart)
+				}
+				progressCallback(filesSent, filesTotal, message)
+			}
+		}
+	}
+
+	// Process subdirectories
 	for _, dir := range dirs {
 		if !dir.IsDir() {
 			continue
@@ -232,12 +438,23 @@ func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool) {
 		}
 
 		for _, file := range files {
-			if file.IsDir() {
-				UploadDir(filepath.Join(filepath.Join(dirname, dir.Name()), file.Name()), userId, byDate, ignoreExif)
+			if control != nil {
+				if control.IsCancelled() {
+					return fmt.Errorf("upload cancelled")
+				}
+				for control.IsPaused() {
+					if control.IsCancelled() {
+						return fmt.Errorf("upload cancelled")
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
 			}
-			if !(strings.HasSuffix(strings.ToLower(file.Name()), "jpg") ||
-				strings.HasSuffix(strings.ToLower(file.Name()), "tiff") ||
-				strings.HasSuffix(strings.ToLower(file.Name()), "tif")) {
+
+			if file.IsDir() {
+				UploadDirWithProgress(filepath.Join(filepath.Join(dirname, dir.Name()), file.Name()), userId, byDate, ignoreExif, progressCallback, control)
+			}
+			ext := strings.ToLower(filepath.Ext(file.Name()))
+			if !(ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif") {
 				continue
 			}
 
@@ -250,7 +467,7 @@ func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool) {
 				continue
 			}
 
-			ext := filepath.Ext(file.Name())
+			ext = filepath.Ext(file.Name())
 			var targetAlbum Album
 
 			if byDate {
@@ -275,6 +492,9 @@ func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool) {
 				targetAlbum = defaultAlbum
 			}
 
+			// Extract GPS coordinates
+			lat, lon := getGPSCoordinates(data)
+
 			shot := Shot{
 				AlbumId:   targetAlbum.AlbumId,
 				Name:      file.Name(),
@@ -284,32 +504,58 @@ func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool) {
 				Data:      data,
 				Mime:      mime.TypeByExtension(ext),
 				OrigPath:  filename,
+				Latitude:  lat,
+				Longitude: lon,
 			}
 
-			PostShot(shot)
+			uploadResp, err := PostShot(shot)
 			filesSent++
 			fmt.Printf("%d of %d sent\n", filesSent, filesTotal)
+
+			if progressCallback != nil {
+				var message string
+				if err != nil {
+					failures++
+					message = fmt.Sprintf("Failed|%s|Album: %s|Date: %s|Error: %v", file.Name(), targetAlbum.Name, dateStart, err)
+				} else if uploadResp != nil {
+					// Use response from server
+					gpsInfo := ""
+					if uploadResp.Lat != 0 || uploadResp.Lon != 0 {
+						gpsInfo = fmt.Sprintf("|GPS: %.2f, %.2f", uploadResp.Lat, uploadResp.Lon)
+					}
+					message = fmt.Sprintf("Uploaded|%s|Album: %s|Date: %s%s", file.Name(), uploadResp.Album, uploadResp.Date, gpsInfo)
+				} else {
+					message = fmt.Sprintf("Uploaded|%s|Album: %s|Date: %s", file.Name(), targetAlbum.Name, dateStart)
+				}
+				progressCallback(filesSent, filesTotal, message)
+			}
 		}
 	}
+
+	if failures > 0 {
+		return fmt.Errorf("upload completed with %d failures", failures)
+	}
+	return nil
 }
 
-func main() {
-	fmt.Print("Starting...")
-
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: uploader <user_id> <directory> [--by-date] [--ignore-exif]")
-		return
-	}
-
-	userId, err := strconv.Atoi(os.Args[1])
-	if err != nil {
-		fmt.Println("Conversion error:", err)
-		return
-	}
-
-	dirname := os.Args[2]
-	byDate := len(os.Args) > 3 && os.Args[3] == "--by-date"
-	ignoreExif := len(os.Args) > 4 && os.Args[4] == "--ignore-exif"
-
-	UploadDir(dirname, userId, byDate, ignoreExif)
-}
+// CLI entry point - uncomment if you want to build a CLI version
+// func main() {
+// 	fmt.Print("Starting...")
+//
+// 	if len(os.Args) < 3 {
+// 		fmt.Println("Usage: uploader <user_id> <directory> [--by-date] [--ignore-exif]")
+// 		return
+// 	}
+//
+// 	userId, err := strconv.Atoi(os.Args[1])
+// 	if err != nil {
+// 		fmt.Println("Conversion error:", err)
+// 		return
+// 	}
+//
+// 	dirname := os.Args[2]
+// 	byDate := len(os.Args) > 3 && os.Args[3] == "--by-date"
+// 	ignoreExif := len(os.Args) > 4 && os.Args[4] == "--ignore-exif"
+//
+// 	UploadDir(dirname, userId, byDate, ignoreExif)
+// }
