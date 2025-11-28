@@ -242,11 +242,11 @@ func PostShot(shot Shot) (*UploadResponse, error) {
 
 type ProgressCallback func(current, total int, message string)
 
-func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool) error {
-	return UploadDirWithProgress(dirname, userId, byDate, ignoreExif, nil, nil)
+func UploadDir(dirname string, userId int, byDate bool, ignoreExif bool, recursive bool) error {
+	return UploadDirWithProgress(dirname, userId, byDate, ignoreExif, recursive, nil, nil)
 }
 
-func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif bool, progressCallback ProgressCallback, control *UploadControl) error {
+func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif bool, recursive bool, progressCallback ProgressCallback, control *UploadControl) error {
 	dirs, err := os.ReadDir(dirname)
 	if err != nil {
 		fmt.Println("Error reading root directory:", err)
@@ -260,6 +260,9 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 	// Count files in subdirectories
 	for _, entry := range dirs {
 		if entry.IsDir() {
+			if !recursive {
+				continue
+			}
 			subdir := filepath.Join(dirname, entry.Name())
 			files, err := os.ReadDir(subdir)
 			if err != nil {
@@ -407,6 +410,10 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 			continue
 		}
 
+		if !recursive {
+			continue
+		}
+
 		albumName := dir.Name()
 		albumPath := filepath.Join(dirname, albumName)
 		files, err := os.ReadDir(albumPath)
@@ -451,7 +458,9 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 			}
 
 			if file.IsDir() {
-				UploadDirWithProgress(filepath.Join(filepath.Join(dirname, dir.Name()), file.Name()), userId, byDate, ignoreExif, progressCallback, control)
+				if recursive {
+					UploadDirWithProgress(filepath.Join(filepath.Join(dirname, dir.Name()), file.Name()), userId, byDate, ignoreExif, recursive, progressCallback, control)
+				}
 			}
 			ext := strings.ToLower(filepath.Ext(file.Name()))
 			if !(ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif") {
