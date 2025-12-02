@@ -19,15 +19,131 @@ import (
 	"github.com/rwcarlsen/goexif/mknote"
 )
 
-//const BaseUrlDev = "http://svema.valdr.ru/api"
+// API Base URLs for different environments
+const (
+	BaseUrlPublic = "http://svema.valdr.ru/api"
+	BaseUrlLocal  = "http://localhost:7777/api"
+	BaseUrlTest   = "http://dobby:7777/api"
+)
 
-const BaseUrlDev = "http://localhost:7777/api"
+// BaseUrlDev is the currently selected API base URL (default to local)
+var BaseUrlDev = BaseUrlLocal
+
+// SetBaseUrl sets the API base URL based on environment selection
+func SetBaseUrl(url string) {
+	authTokenMutex.Lock()
+	defer authTokenMutex.Unlock()
+	BaseUrlDev = url
+}
+
+// Global JWT token storage
+var (
+	authToken      string
+	authTokenMutex sync.RWMutex
+)
+
+// SetAuthToken stores the JWT token for API authentication
+func SetAuthToken(token string) {
+	authTokenMutex.Lock()
+	defer authTokenMutex.Unlock()
+	authToken = token
+}
+
+// GetAuthToken retrieves the stored JWT token
+func GetAuthToken() string {
+	authTokenMutex.RLock()
+	defer authTokenMutex.RUnlock()
+	return authToken
+}
+
+// LoginRequest represents the request body for login
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// LoginResponse represents the response from login endpoint
+type LoginResponse struct {
+	Token  string `json:"token"`
+	UserId int    `json:"userId,omitempty"`
+}
+
+// LoginUser authenticates with username and password and returns JWT token and userId
+func LoginUser(username, password string) (string, int, error) {
+	// Open log file for debugging
+	logFile, _ := os.OpenFile("log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if logFile != nil {
+		defer logFile.Close()
+	}
+
+	logMsg := func(msg string) {
+		fmt.Println(msg)
+		if logFile != nil {
+			logFile.WriteString(msg + "\n")
+		}
+	}
+
+	reqBody := LoginRequest{
+		Username: username,
+		Password: password,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to marshal login request: %w", err)
+	}
+
+	loginURL := BaseUrlDev + "/login"
+	logMsg(fmt.Sprintf("🔐 Login attempt to: %s", loginURL))
+	logMsg(fmt.Sprintf("🔐 Request body: %s", string(jsonData)))
+
+	resp, err := http.Post(loginURL, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		logMsg(fmt.Sprintf("❌ Login request failed: %v", err))
+		if strings.Contains(err.Error(), "connectex") || strings.Contains(err.Error(), "connection refused") {
+			return "", 0, fmt.Errorf("server not available at %s", BaseUrlDev)
+		}
+		return "", 0, fmt.Errorf("login request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	logMsg(fmt.Sprintf("🔐 Response status: %d", resp.StatusCode))
+	logMsg(fmt.Sprintf("🔐 Response body: %s", string(body)))
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp map[string]interface{}
+		if json.Unmarshal(body, &errResp) == nil {
+			if msg, ok := errResp["message"].(string); ok {
+				return "", 0, fmt.Errorf("%s", msg)
+			}
+		}
+		return "", 0, fmt.Errorf("authentication failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var loginResp LoginResponse
+	if err := json.Unmarshal(body, &loginResp); err != nil {
+		logMsg(fmt.Sprintf("❌ Failed to parse login response: %v", err))
+		return "", 0, fmt.Errorf("failed to parse login response: %w", err)
+	}
+
+	if loginResp.Token == "" {
+		logMsg("❌ No token received from server")
+		return "", 0, fmt.Errorf("no token received from server")
+	}
+
+	logMsg(fmt.Sprintf("✅ Login successful! Token received, userId: %d", loginResp.UserId))
+	// If userId is not in the response, we could parse the JWT token to extract it
+	// For now, we'll return 0 if not provided (server should provide it)
+	return loginResp.Token, loginResp.UserId, nil
+}
 
 type Album struct {
-	AlbumId   int
-	Name      string
-	UserId    int
-	PreviewId int
+	AlbumId   int    `json:"albumId"`
+	Name      string `json:"name"`
+	UserId    int    `json:"userId"`
+	PreviewId int    `json:"previewId"`
 }
 
 type Shot struct {
@@ -102,7 +218,23 @@ func GetAlbums() []Album {
 func PostAlbum(album Album) Album {
 	fmt.Printf("...Creating album %s\n", album.Name)
 	albumJson, _ := json.Marshal(album)
-	resp, err := http.Post(BaseUrlDev+"/albums", "application/json", bytes.NewReader(albumJson))
+
+	// Create request with JWT token
+	req, err := http.NewRequest("POST", BaseUrlDev+"/albums", bytes.NewReader(albumJson))
+	if err != nil {
+		fmt.Println("Failed to create request:", err)
+		return album
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Add JWT token to Authorization header
+	token := GetAuthToken()
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
 		return album
@@ -110,8 +242,19 @@ func PostAlbum(album Album) Album {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		fmt.Printf("Failed to create album. Status: %d, Response: %s\n", resp.StatusCode, string(body))
+		return album
+	}
+
+	fmt.Printf("PostAlbum Response Body: %s\n", string(body))
+
 	var updated Album
-	json.Unmarshal(body, &updated)
+	if err := json.Unmarshal(body, &updated); err != nil {
+		fmt.Printf("Failed to parse response: %v\nBody: %s\n", err, string(body))
+		return album
+	}
 	return updated
 }
 
@@ -209,7 +352,23 @@ func getShotCreationDate(path string, ignoreExif bool) (*time.Time, error) {
 
 func PostShot(shot Shot) (*UploadResponse, error) {
 	shotJson, _ := json.Marshal(shot)
-	resp, err := http.Post(BaseUrlDev+"/shots", "application/json", bytes.NewReader(shotJson))
+
+	// Create request with JWT token
+	req, err := http.NewRequest("POST", BaseUrlDev+"/shots", bytes.NewReader(shotJson))
+	if err != nil {
+		fmt.Println("Failed to create request:", err)
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Add JWT token to Authorization header
+	token := GetAuthToken()
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println("Request error:", err)
 		return nil, err
@@ -272,7 +431,7 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 			for _, file := range files {
 				if !file.IsDir() {
 					ext := strings.ToLower(filepath.Ext(file.Name()))
-					if ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif" {
+					if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif" {
 						filesTotal++
 					}
 				}
@@ -280,14 +439,19 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 		} else {
 			// Count files in root directory
 			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			if ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif" {
+			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif" {
 				filesTotal++
 			}
 		}
 	}
 
+	// Only error if no files found AND (not recursive OR recursive with no subdirectories)
 	if filesTotal == 0 {
-		return fmt.Errorf("no images found in directory (checked for .jpg, .jpeg, .tiff, .tif)")
+		if !recursive {
+			return fmt.Errorf("no images found in directory (checked for .jpg, .jpeg, .png, .tiff, .tif)")
+		}
+		// If recursive, we'll just skip to subdirectories - they might have images
+		fmt.Println("No images in root directory, checking subdirectories...")
 	}
 
 	filesSent := 0
@@ -318,7 +482,7 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 			}
 
 			ext := strings.ToLower(filepath.Ext(file.Name()))
-			if !(ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif") {
+			if !(ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif") {
 				continue
 			}
 
@@ -360,6 +524,10 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 					}
 					targetAlbum = storedAlbum
 				} else {
+					if rootAlbum.AlbumId == 0 {
+						fmt.Printf("Creating fallback root album: %s\n", rootAlbum.Name)
+						rootAlbum = PostAlbum(rootAlbum)
+					}
 					targetAlbum = rootAlbum
 				}
 			} else {
@@ -463,7 +631,7 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 				}
 			}
 			ext := strings.ToLower(filepath.Ext(file.Name()))
-			if !(ext == ".jpg" || ext == ".jpeg" || ext == ".tiff" || ext == ".tif") {
+			if !(ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif") {
 				continue
 			}
 
@@ -494,6 +662,10 @@ func UploadDirWithProgress(dirname string, userId int, byDate bool, ignoreExif b
 					targetAlbum = storedAlbum
 				} else {
 					fmt.Println("Could not extract EXIF date, using fallback album")
+					if defaultAlbum.AlbumId == 0 {
+						fmt.Printf("Creating fallback album: %s\n", defaultAlbum.Name)
+						defaultAlbum = PostAlbum(defaultAlbum)
+					}
 					targetAlbum = defaultAlbum
 				}
 			} else {
