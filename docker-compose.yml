@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  uploader:
+    build: .
+    container_name: svema-uploader
+    restart: unless-stopped
+    volumes:
+      # Mount directories that need to be accessed for uploading
+      - /storage/photos:/photos:ro
+    environment:
+      - SVEMA_API_URL=${SVEMA_API_URL:-http://svema-web:7777}
+      - DISPLAY=${DISPLAY:-:0}
+    networks:
+      - svema-network
+    # For GUI applications, would need X11 socket mounting
+    # volumes:
+    #   - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+networks:
+  svema-network:
+    external: true

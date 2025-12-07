@@ -1,0 +1,13 @@
+.git
+.vscode
+*.exe
+*.dll
+*.so
+__debug_bin*
+CAMERA/
+Nokia/
+log
+nul
+.claude/
+README.md
+upload_dobby

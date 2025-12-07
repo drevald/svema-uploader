@@ -4,12 +4,34 @@
 *.dll
 *.so
 *.dylib
+__debug_bin*
+svema-uploader
 
 # Test binary, built with `go test -c`
 *.test
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# Test data directories
+CAMERA/
+Nokia/
+
+# Logs and temp files
+log
+nul
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+upload_dobby
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
