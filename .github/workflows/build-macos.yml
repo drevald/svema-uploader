@@ -1,0 +1,48 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:  # manual trigger from GitHub UI
+  push:
+    tags:
+      - 'v*'          # also runs on version tags like v1.0.0
+
+jobs:
+  build-macos-intel:
+    runs-on: macos-13   # Intel (amd64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: brew install pkg-config
+
+      - name: Build
+        run: go build -tags prod -o svema_uploader_macos_intel .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svema_uploader_macos_intel
+          path: svema_uploader_macos_intel
+
+  build-macos-arm:
+    runs-on: macos-14   # Apple Silicon (arm64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: brew install pkg-config
+
+      - name: Build
+        run: go build -tags prod -o svema_uploader_macos_arm64 .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svema_uploader_macos_arm64
+          path: svema_uploader_macos_arm64
