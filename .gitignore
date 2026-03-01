@@ -32,6 +32,10 @@ Thumbs.db
 
 # Build artifacts
 upload_dobby
+fyne-cross/
+svema_uploader_linux
+debug.log
+Icon.png
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
