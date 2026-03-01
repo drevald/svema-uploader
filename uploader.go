@@ -138,6 +138,31 @@ func LoginUser(username, password string) (string, int, error) {
 	return loginResp.Token, loginResp.UserId, nil
 }
 
+// RequestPasswordReset sends a password reset email for the given address.
+// Expects POST /api/password-reset with {"email": "..."}
+func RequestPasswordReset(email string) error {
+	body, _ := json.Marshal(map[string]string{"email": email})
+	resp, err := http.Post(BaseUrlDev+"/password-reset", "application/json", bytes.NewReader(body))
+	if err != nil {
+		if strings.Contains(err.Error(), "connectex") || strings.Contains(err.Error(), "connection refused") {
+			return fmt.Errorf("server not available at %s", BaseUrlDev)
+		}
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		respBody, _ := io.ReadAll(resp.Body)
+		var errResp map[string]interface{}
+		if json.Unmarshal(respBody, &errResp) == nil {
+			if msg, ok := errResp["message"].(string); ok {
+				return fmt.Errorf("%s", msg)
+			}
+		}
+		return fmt.Errorf("server returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
 type Album struct {
 	AlbumId   int    `json:"albumId"`
 	Name      string `json:"name"`

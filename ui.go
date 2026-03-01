@@ -18,6 +18,51 @@ import (
 	"github.com/rwcarlsen/goexif/exif"
 )
 
+func showForgotPasswordScreen(w fyne.Window, a fyne.App) {
+	header := widget.NewLabelWithStyle("Reset Password", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	hint := widget.NewLabel("Enter your email address and we will send you a reset link.")
+	hint.Wrapping = fyne.TextWrapWord
+
+	emailEntry := widget.NewEntry()
+	emailEntry.SetPlaceHolder("Enter email address")
+
+	submitButton := widget.NewButton("Send Reset Link", func() {
+		email := strings.TrimSpace(emailEntry.Text)
+		if email == "" {
+			showError(fmt.Errorf("Please enter your email address"), w)
+			return
+		}
+		err := RequestPasswordReset(email)
+		if err != nil {
+			showError(fmt.Errorf("Failed to send reset link: %v", err), w)
+			return
+		}
+		dialog.ShowInformation("Email sent",
+			"If an account with that email exists, a reset link has been sent.",
+			w)
+		showLoginScreen(w, a)
+	})
+
+	backButton := widget.NewButton("Back to Login", func() {
+		showLoginScreen(w, a)
+	})
+
+	content := container.NewVBox(
+		widget.NewLabel(""),
+		header,
+		widget.NewLabel(""),
+		hint,
+		widget.NewLabel(""),
+		widget.NewLabel("Email:"),
+		emailEntry,
+		widget.NewLabel(""),
+		submitButton,
+		backButton,
+	)
+
+	w.SetContent(container.NewCenter(content))
+}
+
 func getRecentDirs() []string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {

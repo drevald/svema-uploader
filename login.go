@@ -34,6 +34,10 @@ func showLoginScreen(w fyne.Window, a fyne.App) {
 	passwordEntry := widget.NewPasswordEntry()
 	passwordEntry.SetPlaceHolder("Enter Password")
 
+	forgotButton := widget.NewButton("Forgot password?", func() {
+		showForgotPasswordScreen(w, a)
+	})
+
 	loginButton := widget.NewButton("Login", func() {
 		if usernameEntry.Text == "" {
 			showError(fmt.Errorf("Please enter a username"), w)
@@ -72,6 +76,7 @@ func showLoginScreen(w fyne.Window, a fyne.App) {
 		passwordEntry,
 		widget.NewLabel(""),
 		loginButton,
+		forgotButton,
 	)
 
 	w.SetContent(container.NewCenter(content))
