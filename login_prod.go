@@ -12,6 +12,7 @@ import (
 )
 
 func showLoginScreen(w fyne.Window, a fyne.App) {
+	SetBaseUrl(BaseUrlPublic)
 	header := widget.NewLabelWithStyle("Welcome to Svema Uploader", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
 	usernameEntry := widget.NewEntry()

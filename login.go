@@ -25,8 +25,8 @@ func showLoginScreen(w fyne.Window, a fyne.App) {
 		}
 	})
 	envRadio.Horizontal = true
-	envRadio.Selected = "Local"
-	SetBaseUrl(BaseUrlLocal)
+	envRadio.Selected = "Public"
+	SetBaseUrl(BaseUrlPublic)
 
 	usernameEntry := widget.NewEntry()
 	usernameEntry.SetPlaceHolder("Enter Username")
