@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev
+      - name: Build
+        run: go build -tags prod -o svema_uploader_linux .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svema_uploader_linux
+          path: svema_uploader_linux
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Install GCC (MinGW)
+        run: choco install mingw -y
+      - name: Build
+        run: go build -tags prod -o svema_uploader_windows.exe .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svema_uploader_windows
+          path: svema_uploader_windows.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Install dependencies
+        run: brew install pkgconf
+      - name: Build
+        run: go build -tags prod -o svema_uploader_macos_arm64 .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svema_uploader_macos_arm64
+          path: svema_uploader_macos_arm64
+
+  release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: svema_uploader_linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: svema_uploader_windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: svema_uploader_macos_arm64
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            svema_uploader_linux
+            svema_uploader_windows.exe
+            svema_uploader_macos_arm64
+          generate_release_notes: true
