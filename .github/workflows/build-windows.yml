@@ -1,0 +1,28 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install GCC (MinGW)
+        run: choco install mingw -y
+
+      - name: Build
+        run: go build -tags prod -o svema_uploader_windows.exe .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svema_uploader_windows
+          path: svema_uploader_windows.exe
