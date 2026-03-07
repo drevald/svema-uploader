@@ -30,8 +30,27 @@ jobs:
           go-version: '1.22'
       - name: Install GCC (MinGW)
         run: choco install mingw -y
-      - name: Build
-        run: go build -tags prod -o svema_uploader_windows.exe .
+      - name: Install fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      - name: Convert SVG to ICO
+        run: |
+          pip install cairosvg Pillow
+          python - <<'EOF'
+          import cairosvg, io
+          from PIL import Image
+          sizes = [16, 32, 48, 64, 128, 256]
+          imgs = []
+          for s in sizes:
+              png = cairosvg.svg2png(url="design/icon.svg", output_width=s, output_height=s)
+              imgs.append(Image.open(io.BytesIO(png)).convert("RGBA"))
+          imgs[0].save("design/icon.ico", format="ICO", sizes=[(s, s) for s in sizes], append_images=imgs[1:])
+          EOF
+        shell: bash
+      - name: Package .exe with icon
+        run: fyne package -os windows -icon design/icon.ico -name "Svema Uploader" -appID com.svema.uploader -tags prod
+      - name: Rename output
+        run: mv "Svema Uploader.exe" svema_uploader_windows.exe
+        shell: bash
       - uses: actions/upload-artifact@v4
         with:
           name: svema_uploader_windows
