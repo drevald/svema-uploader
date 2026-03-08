@@ -22,21 +22,6 @@ jobs:
       - name: Install fyne CLI
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
-      - name: Convert SVG to ICO
-        run: |
-          pip install cairosvg Pillow
-          python - <<'EOF'
-          import cairosvg, io
-          from PIL import Image
-          sizes = [16, 32, 48, 64, 128, 256]
-          imgs = []
-          for s in sizes:
-              png = cairosvg.svg2png(url="design/icon.svg", output_width=s, output_height=s)
-              imgs.append(Image.open(io.BytesIO(png)).convert("RGBA"))
-          imgs[0].save("design/icon.ico", format="ICO", sizes=[(s, s) for s in sizes], append_images=imgs[1:])
-          EOF
-        shell: bash
-
       - name: Package .exe with icon
         run: fyne package -os windows -icon design/icon.ico -name "Svema Uploader" -appID com.svema.uploader -tags prod
 
