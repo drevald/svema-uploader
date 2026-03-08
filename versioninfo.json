@@ -1,7 +1,7 @@
 {
   "FixedFileInfo": {
-    "FileVersion": {"Major": 1, "Minor": 0, "Patch": 9, "Build": 0},
-    "ProductVersion": {"Major": 1, "Minor": 0, "Patch": 9, "Build": 0}
+    "FileVersion": {"Major": 1, "Minor": 0, "Patch": 10, "Build": 0},
+    "ProductVersion": {"Major": 1, "Minor": 0, "Patch": 10, "Build": 0}
   },
   "StringFileInfo": {
     "ProductName": "Svema Uploader",
