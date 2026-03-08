@@ -1,0 +1,13 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {"Major": 1, "Minor": 0, "Patch": 0, "Build": 0},
+    "ProductVersion": {"Major": 1, "Minor": 0, "Patch": 0, "Build": 0}
+  },
+  "StringFileInfo": {
+    "ProductName": "Svema Uploader",
+    "FileDescription": "Svema Photo Uploader",
+    "CompanyName": "Svema",
+    "LegalCopyright": ""
+  },
+  "IconPath": "design/icon.ico"
+}
