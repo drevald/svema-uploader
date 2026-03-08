@@ -19,31 +19,31 @@ import (
 )
 
 func showForgotPasswordScreen(w fyne.Window, a fyne.App) {
-	header := widget.NewLabelWithStyle("Reset Password", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	hint := widget.NewLabel("Enter your email address and we will send you a reset link.")
+	header := widget.NewLabelWithStyle("Сброс пароля", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	hint := widget.NewLabel("Введите ваш email и мы отправим ссылку для сброса пароля.")
 	hint.Wrapping = fyne.TextWrapWord
 
 	emailEntry := widget.NewEntry()
-	emailEntry.SetPlaceHolder("Enter email address")
+	emailEntry.SetPlaceHolder("Введите email")
 
-	submitButton := widget.NewButton("Send Reset Link", func() {
+	submitButton := widget.NewButton("Отправить ссылку", func() {
 		email := strings.TrimSpace(emailEntry.Text)
 		if email == "" {
-			showError(fmt.Errorf("Please enter your email address"), w)
+			showError(fmt.Errorf("Пожалуйста, введите email"), w)
 			return
 		}
 		err := RequestPasswordReset(email)
 		if err != nil {
-			showError(fmt.Errorf("Failed to send reset link: %v", err), w)
+			showError(fmt.Errorf("Не удалось отправить ссылку: %v", err), w)
 			return
 		}
-		dialog.ShowInformation("Email sent",
-			"If an account with that email exists, a reset link has been sent.",
+		dialog.ShowInformation("Письмо отправлено",
+			"Если аккаунт с таким email существует, ссылка для сброса пароля отправлена.",
 			w)
 		showLoginScreen(w, a)
 	})
 
-	backButton := widget.NewButton("Back to Login", func() {
+	backButton := widget.NewButton("Назад к входу", func() {
 		showLoginScreen(w, a)
 	})
 
@@ -126,14 +126,14 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 	pathLabel := widget.NewLabel("Current: " + currentPath)
 	pathLabel.Wrapping = fyne.TextWrapBreak
 
-	upButton := widget.NewButtonWithIcon("Up", theme.NavigateBackIcon(), func() {
+	upButton := widget.NewButtonWithIcon("Вверх", theme.NavigateBackIcon(), func() {
 		parent := filepath.Dir(currentPath)
 		if parent != currentPath {
 			showFileBrowser(w, a, userId, parent)
 		}
 	})
 
-	homeButton := widget.NewButtonWithIcon("Home", theme.HomeIcon(), func() {
+	homeButton := widget.NewButtonWithIcon("Домой", theme.HomeIcon(), func() {
 		homeDir, err := os.UserHomeDir()
 		if err == nil {
 			showFileBrowser(w, a, userId, homeDir)
@@ -161,10 +161,10 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 	if currentDrive != "" {
 		driveSelect.SetSelected(currentDrive)
 	}
-	driveSelect.PlaceHolder = "Drive"
+	driveSelect.PlaceHolder = "Диск"
 	driveSelectContainer := container.NewGridWrap(fyne.NewSize(80, 36), driveSelect)
 
-	selectButton := widget.NewButton("Select This Directory", func() {
+	selectButton := widget.NewButton("Выбрать эту папку", func() {
 		saveRecentDir(currentPath)
 		showUploadConfig(w, a, userId, currentPath)
 	})
@@ -275,7 +275,7 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 
 	scroll := container.NewVScroll(gridContent)
 
-	logoutButton := widget.NewButton("Logout", func() {
+	logoutButton := widget.NewButton("Выйти", func() {
 		showLoginScreen(w, a)
 	})
 
@@ -285,7 +285,7 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 	var mainContent fyne.CanvasObject
 
 	if len(recentDirs) > 0 {
-		recentLabel := widget.NewLabel("Recent: ")
+		recentLabel := widget.NewLabel("Недавние:")
 		recentLabel.TextStyle = fyne.TextStyle{Bold: true}
 
 		recentBtns := []fyne.CanvasObject{recentLabel}
@@ -320,20 +320,20 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 }
 
 func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string) {
-	header := widget.NewLabelWithStyle("Upload Configuration", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	header := widget.NewLabelWithStyle("Настройки загрузки", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
-	pathLabel := widget.NewLabel("Directory: " + selectedPath)
+	pathLabel := widget.NewLabel("Папка: " + selectedPath)
 	pathLabel.Wrapping = fyne.TextWrapBreak
 
-	groupingRadio := widget.NewRadioGroup([]string{"Group by Date", "Group by Folder"}, nil)
+	groupingRadio := widget.NewRadioGroup([]string{"Группировать по дате", "Группировать по папке"}, nil)
 	groupingRadio.Horizontal = true
-	groupingRadio.Selected = "Group by Date"
+	groupingRadio.Selected = "Группировать по дате"
 
-	recursiveCheck := widget.NewCheck("Process subdirectories recursively", nil)
+	recursiveCheck := widget.NewCheck("Обрабатывать подпапки рекурсивно", nil)
 	recursiveCheck.Checked = false
 
 	groupingRadio.OnChanged = func(selected string) {
-		if selected == "Group by Date" {
+		if selected == "Группировать по дате" {
 			recursiveCheck.Enable()
 		} else {
 			recursiveCheck.Disable()
@@ -446,7 +446,7 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 	logContainer := container.NewVScroll(logList)
 	logContainer.SetMinSize(fyne.NewSize(0, 150))
 
-	backButton := widget.NewButton("Back", func() {
+	backButton := widget.NewButton("Назад", func() {
 		showFileBrowser(w, a, userId, selectedPath)
 	})
 
@@ -455,10 +455,10 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 	var pauseButton *widget.Button
 	var control *UploadControl
 
-	cancelButton = widget.NewButton("Cancel", func() {
+	cancelButton = widget.NewButton("Отмена", func() {
 		if control != nil {
 			control.Cancel()
-			statusLabel.SetText("Cancelling...")
+			statusLabel.SetText("Отмена...")
 			cancelButton.Disable()
 			pauseButton.Disable()
 		}
@@ -466,28 +466,28 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 	cancelButton.Disable()
 	cancelButton.Importance = widget.DangerImportance
 
-	pauseButton = widget.NewButton("Pause", nil)
+	pauseButton = widget.NewButton("Пауза", nil)
 	pauseButton.OnTapped = func() {
 		if control != nil {
 			if control.IsPaused() {
 				control.SetPaused(false)
-				pauseButton.SetText("Pause")
-				statusLabel.SetText("Resuming...")
+				pauseButton.SetText("Пауза")
+				statusLabel.SetText("Продолжаем...")
 			} else {
 				control.SetPaused(true)
-				pauseButton.SetText("Resume")
-				statusLabel.SetText("Paused")
+				pauseButton.SetText("Продолжить")
+				statusLabel.SetText("Пауза")
 			}
 		}
 	}
 	pauseButton.Disable()
 
-	uploadButton = widget.NewButton("Start Upload", func() {
+	uploadButton = widget.NewButton("Начать загрузку", func() {
 		uploadButton.Disable()
 		backButton.Disable()
 		cancelButton.Enable()
 		pauseButton.Enable()
-		pauseButton.SetText("Pause")
+		pauseButton.SetText("Пауза")
 
 		barcodeMu.Lock()
 		barcodeStatuses = nil
@@ -495,7 +495,7 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 		barcodeMu.Unlock()
 		barcodeRaster.Refresh()
 
-		statusLabel.SetText("Starting upload...")
+		statusLabel.SetText("Начинаем загрузку...")
 		logData = []string{}
 		logList.Refresh()
 
@@ -521,13 +521,13 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 				barcodeMu.Unlock()
 				barcodeRaster.Refresh()
 
-				statusLabel.SetText(fmt.Sprintf("%d/%d uploaded, %d failed", uploadedCount, total, failedCount))
+				statusLabel.SetText(fmt.Sprintf("Загружено %d/%d, ошибок: %d", uploadedCount, total, failedCount))
 				logData = append(logData, message)
 				logList.Refresh()
 				logList.ScrollToBottom()
 			}
 
-			byDate := groupingRadio.Selected == "Group by Date"
+			byDate := groupingRadio.Selected == "Группировать по дате"
 			recursive := false
 			if byDate {
 				recursive = recursiveCheck.Checked
@@ -552,28 +552,28 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 
 			if err != nil {
 				if err.Error() == "upload cancelled" {
-					statusLabel.SetText("Upload cancelled")
-					dialog.ShowInformation("Cancelled", "Upload was cancelled by user.", w)
+					statusLabel.SetText("Загрузка отменена")
+					dialog.ShowInformation("Отменено", "Загрузка отменена пользователем.", w)
 				} else {
-					statusLabel.SetText("Upload failed!")
-					showError(fmt.Errorf("Upload failed: %v", err), w)
+					statusLabel.SetText("Ошибка загрузки!")
+					showError(fmt.Errorf("Ошибка загрузки: %v", err), w)
 				}
 			} else {
-				statusLabel.SetText("Upload complete!")
-				dialog.ShowInformation("Success", "All photos have been uploaded successfully!", w)
+				statusLabel.SetText("Загрузка завершена!")
+				dialog.ShowInformation("Успешно", "Все фотографии успешно загружены!", w)
 			}
 		}()
 	})
 	uploadButton.Importance = widget.HighImportance
 
 	optionsBox := container.NewVBox(
-		widget.NewLabel("Options:"),
+		widget.NewLabel("Параметры:"),
 		groupingRadio,
 		recursiveCheck,
 	)
 
 	progressBox := container.NewVBox(
-		widget.NewLabel("Progress:"),
+		widget.NewLabel("Прогресс:"),
 		barcodeRaster,
 		statusLabel,
 	)
@@ -587,7 +587,7 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 		layout.NewSpacer(),
 		progressBox,
 		layout.NewSpacer(),
-		widget.NewLabel("Log:"),
+		widget.NewLabel("Журнал:"),
 		logContainer,
 		layout.NewSpacer(),
 		container.NewHBox(backButton, layout.NewSpacer(), pauseButton, cancelButton, uploadButton),
