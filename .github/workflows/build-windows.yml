@@ -19,15 +19,15 @@ jobs:
       - name: Install GCC (MinGW)
         run: choco install mingw -y
 
-      - name: Install fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      - name: Install goversioninfo
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
 
-      - name: Package .exe with icon
-        run: fyne package -os windows -icon design/icon.ico -name "Svema Uploader" -appID com.svema.uploader -tags prod
-
-      - name: Rename output
-        run: mv "Svema Uploader.exe" svema_uploader_windows.exe
+      - name: Generate resource.syso
+        run: goversioninfo -icon=design/icon.ico -o resource.syso
         shell: bash
+
+      - name: Build
+        run: go build -tags prod -o svema_uploader_windows.exe .
 
       - uses: actions/upload-artifact@v4
         with:
