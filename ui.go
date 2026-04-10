@@ -47,6 +47,8 @@ func showForgotPasswordScreen(w fyne.Window, a fyne.App) {
 		showLoginScreen(w, a)
 	})
 
+	emailWrap := container.NewGridWrap(fyne.NewSize(400, 36), emailEntry)
+
 	content := container.NewVBox(
 		widget.NewLabel(""),
 		header,
@@ -54,13 +56,15 @@ func showForgotPasswordScreen(w fyne.Window, a fyne.App) {
 		hint,
 		widget.NewLabel(""),
 		widget.NewLabel("Email:"),
-		emailEntry,
+		emailWrap,
 		widget.NewLabel(""),
 		submitButton,
 		backButton,
 	)
 
-	w.SetContent(container.NewCenter(content))
+	bottomSpacer := canvas.NewRectangle(color.Transparent)
+	bottomSpacer.SetMinSize(fyne.NewSize(0, 60))
+	w.SetContent(container.NewBorder(nil, bottomSpacer, nil, nil, container.NewCenter(container.NewPadded(content))))
 }
 
 func getRecentDirs() []string {
@@ -123,13 +127,25 @@ func extractExifThumbnail(path string) ([]byte, error) {
 }
 
 func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) {
-	pathLabel := widget.NewLabel("Current: " + currentPath)
+	isMTP := IsMTPPath(currentPath)
+
+	// Display label
+	displayPath := currentPath
+	if isMTP {
+		displayPath = "MTP: " + strings.TrimPrefix(currentPath, MTPPrefix)
+	}
+	pathLabel := widget.NewLabel("Current: " + displayPath)
 	pathLabel.Wrapping = fyne.TextWrapBreak
 
 	upButton := widget.NewButtonWithIcon("Вверх", theme.NavigateBackIcon(), func() {
-		parent := filepath.Dir(currentPath)
-		if parent != currentPath {
+		if isMTP {
+			parent := MTPPathParent(currentPath)
 			showFileBrowser(w, a, userId, parent)
+		} else {
+			parent := filepath.Dir(currentPath)
+			if parent != currentPath {
+				showFileBrowser(w, a, userId, parent)
+			}
 		}
 	})
 
@@ -140,21 +156,38 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 		}
 	})
 
-	// Build list of available drives (Windows only; no-op on other platforms)
+	// Build list of available drives + MTP devices
 	var driveOptions []string
 	currentDrive := ""
 	for drive := 'A'; drive <= 'Z'; drive++ {
 		drivePath := string(drive) + ":\\"
 		if _, err := os.Stat(drivePath); err == nil {
 			driveOptions = append(driveOptions, string(drive)+":")
-			if strings.HasPrefix(strings.ToUpper(currentPath), string(drive)+":") {
+			if !isMTP && strings.HasPrefix(strings.ToUpper(currentPath), string(drive)+":") {
 				currentDrive = string(drive) + ":"
+			}
+		}
+	}
+	// Add MTP devices (phone/camera storage)
+	for _, devName := range GetMTPDeviceNames() {
+		label := "MTP:" + devName
+		driveOptions = append(driveOptions, label)
+		if isMTP {
+			devInPath, _ := parseMTPPath(currentPath)
+			if strings.EqualFold(devInPath, devName) {
+				currentDrive = label
 			}
 		}
 	}
 
 	driveSelect := widget.NewSelect(driveOptions, func(selected string) {
-		if selected != currentDrive {
+		if selected == currentDrive {
+			return
+		}
+		if strings.HasPrefix(selected, "MTP:") {
+			devName := strings.TrimPrefix(selected, "MTP:")
+			showFileBrowser(w, a, userId, MTPPrefix+devName)
+		} else {
 			showFileBrowser(w, a, userId, selected+"\\")
 		}
 	})
@@ -162,114 +195,164 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 		driveSelect.SetSelected(currentDrive)
 	}
 	driveSelect.PlaceHolder = "Диск"
-	driveSelectContainer := container.NewGridWrap(fyne.NewSize(80, 36), driveSelect)
+	driveSelectContainer := container.NewGridWrap(fyne.NewSize(120, 36), driveSelect)
 
 	selectButton := widget.NewButton("Выбрать эту папку", func() {
-		saveRecentDir(currentPath)
+		if !isMTP {
+			saveRecentDir(currentPath)
+		}
 		showUploadConfig(w, a, userId, currentPath)
 	})
 	selectButton.Importance = widget.HighImportance
 
-	files, err := os.ReadDir(currentPath)
-	if err != nil {
-		showError(err, w)
-		return
-	}
-
-	var folders []os.DirEntry
-	var filesList []os.DirEntry
-	for _, f := range files {
-		if f.IsDir() && strings.HasPrefix(f.Name(), ".") {
-			continue
-		}
-		if f.IsDir() {
-			folders = append(folders, f)
-		} else {
-			filesList = append(filesList, f)
-		}
-	}
-
+	// Fetch directory entries (regular or MTP)
 	gridContent := container.NewGridWithColumns(4)
 
-	for _, f := range folders {
-		name := f.Name()
-		path := filepath.Join(currentPath, name)
-		btn := widget.NewButtonWithIcon(name, theme.FolderIcon(), func() {
-			showFileBrowser(w, a, userId, path)
-		})
-		if len(name) > 15 {
-			btn.SetText(name[:12] + "...")
-		}
-		gridContent.Add(btn)
-	}
+	if isMTP {
+		loadingLabel := widget.NewLabel("Загрузка...")
+		loadingLabel.Alignment = fyne.TextAlignCenter
+		gridContent.Add(loadingLabel)
 
-	imageCount := 0
-	for _, f := range filesList {
-		ext := strings.ToLower(filepath.Ext(f.Name()))
-		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif" {
-			imageCount++
-		}
-	}
+		go func() {
+			mtpEntries, err := ListMTPDirectory(currentPath)
+			if err != nil {
+				showError(fmt.Errorf("Не удалось открыть MTP папку: %v", err), w)
+				return
+			}
 
-	loadThumbnails := false
+			gridContent.Objects = nil
 
-	type thumbnailJob struct {
-		path      string
-		imgWidget *canvas.Image
-	}
-
-	var jobs chan thumbnailJob
-	if loadThumbnails {
-		jobs = make(chan thumbnailJob, imageCount)
-	}
-
-	for _, f := range filesList {
-		name := f.Name()
-		path := filepath.Join(currentPath, name)
-		ext := strings.ToLower(filepath.Ext(name))
-		isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif"
-
-		imgHolder := container.NewStack()
-
-		icon := theme.FileIcon()
-		if isImage {
-			icon = theme.FileImageIcon()
-		}
-
-		imgWidget := canvas.NewImageFromResource(icon)
-		imgWidget.FillMode = canvas.ImageFillContain
-		imgWidget.SetMinSize(fyne.NewSize(100, 100))
-		imgHolder.Add(imgWidget)
-
-		label := widget.NewLabel(name)
-		label.Alignment = fyne.TextAlignCenter
-		label.Wrapping = fyne.TextTruncate
-
-		gridContent.Add(container.NewVBox(imgHolder, label))
-
-		if isImage && loadThumbnails {
-			jobs <- thumbnailJob{path: path, imgWidget: imgWidget}
-		}
-	}
-
-	if loadThumbnails && jobs != nil {
-		close(jobs)
-		numWorkers := 4
-		for i := 0; i < numWorkers; i++ {
-			go func() {
-				for job := range jobs {
-					data, err := extractExifThumbnail(job.path)
-					if err != nil {
-						data, err = os.ReadFile(job.path)
-						if err != nil {
-							continue
-						}
+			for _, entry := range mtpEntries {
+				name := entry.Name
+				entryPath := MTPPathJoin(currentPath, name)
+				if entry.IsDir {
+					btnText := name
+					if len(btnText) > 15 {
+						btnText = btnText[:12] + "..."
 					}
-					res := fyne.NewStaticResource(filepath.Base(job.path), data)
-					job.imgWidget.Resource = res
-					job.imgWidget.Refresh()
+					btn := widget.NewButtonWithIcon(btnText, theme.FolderIcon(), func() {
+						showFileBrowser(w, a, userId, entryPath)
+					})
+					gridContent.Add(btn)
+				} else {
+					ext := strings.ToLower(filepath.Ext(name))
+					isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif"
+					icon := theme.FileIcon()
+					if isImage {
+						icon = theme.FileImageIcon()
+					}
+					imgWidget := canvas.NewImageFromResource(icon)
+					imgWidget.FillMode = canvas.ImageFillContain
+					imgWidget.SetMinSize(fyne.NewSize(100, 100))
+					label := widget.NewLabel(name)
+					label.Alignment = fyne.TextAlignCenter
+					label.Wrapping = fyne.TextTruncate
+					gridContent.Add(container.NewVBox(container.NewStack(imgWidget), label))
 				}
-			}()
+			}
+
+			gridContent.Refresh()
+		}()
+	} else {
+		files, err := os.ReadDir(currentPath)
+		if err != nil {
+			showError(err, w)
+			return
+		}
+
+		var folders []os.DirEntry
+		var filesList []os.DirEntry
+		for _, f := range files {
+			if f.IsDir() && strings.HasPrefix(f.Name(), ".") {
+				continue
+			}
+			if f.IsDir() {
+				folders = append(folders, f)
+			} else {
+				filesList = append(filesList, f)
+			}
+		}
+
+		for _, f := range folders {
+			name := f.Name()
+			path := filepath.Join(currentPath, name)
+			btn := widget.NewButtonWithIcon(name, theme.FolderIcon(), func() {
+				showFileBrowser(w, a, userId, path)
+			})
+			if len(name) > 15 {
+				btn.SetText(name[:12] + "...")
+			}
+			gridContent.Add(btn)
+		}
+
+		imageCount := 0
+		for _, f := range filesList {
+			ext := strings.ToLower(filepath.Ext(f.Name()))
+			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif" {
+				imageCount++
+			}
+		}
+
+		loadThumbnails := false
+
+		type thumbnailJob struct {
+			path      string
+			imgWidget *canvas.Image
+		}
+
+		var jobs chan thumbnailJob
+		if loadThumbnails {
+			jobs = make(chan thumbnailJob, imageCount)
+		}
+
+		for _, f := range filesList {
+			name := f.Name()
+			path := filepath.Join(currentPath, name)
+			ext := strings.ToLower(filepath.Ext(name))
+			isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tiff" || ext == ".tif"
+
+			imgHolder := container.NewStack()
+
+			icon := theme.FileIcon()
+			if isImage {
+				icon = theme.FileImageIcon()
+			}
+
+			imgWidget := canvas.NewImageFromResource(icon)
+			imgWidget.FillMode = canvas.ImageFillContain
+			imgWidget.SetMinSize(fyne.NewSize(100, 100))
+			imgHolder.Add(imgWidget)
+
+			label := widget.NewLabel(name)
+			label.Alignment = fyne.TextAlignCenter
+			label.Wrapping = fyne.TextTruncate
+
+			gridContent.Add(container.NewVBox(imgHolder, label))
+
+			if isImage && loadThumbnails {
+				jobs <- thumbnailJob{path: path, imgWidget: imgWidget}
+			}
+		}
+
+		if loadThumbnails && jobs != nil {
+			close(jobs)
+			numWorkers := 4
+			for i := 0; i < numWorkers; i++ {
+				go func() {
+					for job := range jobs {
+						data, err := extractExifThumbnail(job.path)
+						if err != nil {
+							data, err = os.ReadFile(job.path)
+							if err != nil {
+								continue
+							}
+						}
+						res := fyne.NewStaticResource(filepath.Base(job.path), data)
+						job.imgWidget.Resource = res
+						job.imgWidget.Refresh()
+					}
+				}()
+			}
 		}
 	}
 
@@ -284,7 +367,7 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 	recentDirs := getRecentDirs()
 	var mainContent fyne.CanvasObject
 
-	if len(recentDirs) > 0 {
+	if !isMTP && len(recentDirs) > 0 {
 		recentLabel := widget.NewLabel("Недавние:")
 		recentLabel.TextStyle = fyne.TextStyle{Bold: true}
 
@@ -502,6 +585,53 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 		control = &UploadControl{}
 
 		go func() {
+			byDate := groupingRadio.Selected == "Группировать по дате"
+			recursive := false
+			if byDate {
+				recursive = recursiveCheck.Checked
+			} else {
+				recursive = true
+			}
+
+			uploadPath := selectedPath
+			var mtpCleanup func()
+
+			// If MTP path, copy files to a temp directory first
+			if IsMTPPath(selectedPath) {
+				statusLabel.SetText("Подсчёт файлов на устройстве...")
+				mtpTotal := CountMTPImageFiles(selectedPath, recursive)
+				if mtpTotal > 0 {
+					barcodeMu.Lock()
+					barcodeTotal = mtpTotal
+					barcodeStatuses = make([]int8, mtpTotal)
+					barcodeMu.Unlock()
+					barcodeRaster.Refresh()
+				}
+				mtpCopied := 0
+				tempDir, cleanup, err := CopyMTPToTemp(selectedPath, recursive, func(name string) {
+					mtpCopied++
+					barcodeMu.Lock()
+					if mtpCopied <= len(barcodeStatuses) {
+						barcodeStatuses[mtpCopied-1] = 1
+					}
+					barcodeMu.Unlock()
+					barcodeRaster.Refresh()
+					statusLabel.SetText(fmt.Sprintf("Копируется (%d/%d): %s", mtpCopied, mtpTotal, name))
+				})
+				if err != nil {
+					uploadButton.Enable()
+					backButton.Enable()
+					cancelButton.Disable()
+					pauseButton.Disable()
+					statusLabel.SetText("Ошибка копирования с устройства!")
+					showError(fmt.Errorf("Не удалось скопировать файлы с MTP устройства: %v", err), w)
+					return
+				}
+				uploadPath = tempDir
+				mtpCleanup = cleanup
+				statusLabel.SetText("Копирование завершено, начинаем загрузку...")
+			}
+
 			var uploadedCount, failedCount int
 			progressCallback := func(current, total int, message string) {
 				barcodeMu.Lock()
@@ -527,16 +657,8 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 				logList.ScrollToBottom()
 			}
 
-			byDate := groupingRadio.Selected == "Группировать по дате"
-			recursive := false
-			if byDate {
-				recursive = recursiveCheck.Checked
-			} else {
-				recursive = true
-			}
-
 			err := UploadDirWithProgress(
-				selectedPath,
+				uploadPath,
 				userId,
 				byDate,
 				false,
@@ -544,6 +666,10 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 				progressCallback,
 				control,
 			)
+
+			if mtpCleanup != nil {
+				mtpCleanup()
+			}
 
 			uploadButton.Enable()
 			backButton.Enable()
@@ -593,7 +719,9 @@ func showUploadConfig(w fyne.Window, a fyne.App, userId int, selectedPath string
 		container.NewHBox(backButton, layout.NewSpacer(), pauseButton, cancelButton, uploadButton),
 	)
 
-	w.SetContent(container.NewPadded(container.NewPadded(mainContent)))
+	bottomSpacer2 := canvas.NewRectangle(color.Transparent)
+	bottomSpacer2.SetMinSize(fyne.NewSize(0, 16))
+	w.SetContent(container.NewPadded(container.NewBorder(nil, bottomSpacer2, nil, nil, container.NewPadded(mainContent))))
 }
 
 func showError(err error, w fyne.Window) {

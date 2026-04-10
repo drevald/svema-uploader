@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 
+	"image/color"
+
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
@@ -79,5 +82,7 @@ func showLoginScreen(w fyne.Window, a fyne.App) {
 		forgotButton,
 	)
 
-	w.SetContent(container.NewCenter(content))
+	bottomSpacer := canvas.NewRectangle(color.Transparent)
+	bottomSpacer.SetMinSize(fyne.NewSize(0, 60))
+	w.SetContent(container.NewBorder(nil, bottomSpacer, nil, nil, container.NewCenter(content)))
 }
