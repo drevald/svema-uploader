@@ -134,8 +134,8 @@ func showFileBrowser(w fyne.Window, a fyne.App, userId int, currentPath string) 
 	if isMTP {
 		displayPath = "MTP: " + strings.TrimPrefix(currentPath, MTPPrefix)
 	}
-	pathLabel := widget.NewLabel("Current: " + displayPath)
-	pathLabel.Wrapping = fyne.TextWrapBreak
+	pathLabel := widget.NewLabel(displayPath)
+	pathLabel.Truncation = fyne.TextTruncateEllipsis
 
 	upButton := widget.NewButtonWithIcon("Вверх", theme.NavigateBackIcon(), func() {
 		if isMTP {

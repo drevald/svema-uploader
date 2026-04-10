@@ -17,7 +17,8 @@ func main() {
 
 	myWindow := myApp.NewWindow("Svema Photo Uploader")
 	myWindow.SetIcon(icon)
-	myWindow.Resize(fyne.NewSize(800, 600))
+	myWindow.Resize(fyne.NewSize(600, 600))
+	myWindow.SetFixedSize(true)
 
 	showLoginScreen(myWindow, myApp)
 
